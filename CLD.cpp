@@ -2,6 +2,7 @@
 //
 #define USES_CONVERSION
 
+#include "CLD.h"
 #include <opencv2/opencv.hpp>
 #include <iostream>
 #include <stdio.h>
@@ -13,20 +14,19 @@
 using namespace cv;
 using namespace std;
 
-void rotate_field(Mat src, float theta) {
+void rotate_field(Mat src, Mat* pFlowField, float theta) {
 	printf("Start rotate field \n");
 
-	int height = src.rows;
-	int width = src.cols;
-	Mat rotated = Mat::zeros(height, width, CV_32FC2);
+	//Mat flow_field = pFlowField;
+	//Mat rotated = Mat::zeros(height, width, CV_32FC2);
 
 	for (int i = 0; i < src.rows; i++) {
-		for (int j = 0; j < src.cols; j++) {
+		for (int j = 0; j < src.rows; j++) {
 			Vec2f v = src.at<Vec2f>(i, j);
 			float rx = v[0] * cos(theta) - v[1] * sin(theta);
 			float ry = v[1] * cos(theta) + v[0] * sin(theta);
 
-			rotated.at<Vec2f>(i, j) = Vec2f(rx, ry);
+			(*pFlowField).at<Vec2f>(i, j) = Vec2f(rx, ry);
 		}
 	}
 	// return rotated;
@@ -43,7 +43,7 @@ float weight_spatial(int h, int w, int r, int c, float radius) { 	// Eq(2)
 	}
 }
 
-float weight_magnitude(float gradmg_x, float gradmg_y, float n) {	// Eq(3)
+float weight_magnitude(const float gradmg_x, const float gradmg_y, const float n) {	// Eq(3)
 	return 0.5 * (1 + tanh(n * (gradmg_y - gradmg_x)));
 }
 
@@ -60,38 +60,35 @@ float get_phi(Vec2f& x, Vec2f& y) {							// Eq(5)
 	}
 }
 
-void init_ETF(Mat* pImg, Mat* pFlowField, Mat grad_mg) {
+void init_ETF(const Mat src, Mat* pFlowField, Mat* pGradMg) {
 
 	printf("Start init ETF \n");
 
-	Mat grad_x, grad_y;
-	Mat flow_field = *pFlowField;
-	Mat src = *pImg;
+	Mat grad_x, grad_y;				// TODO: 이거 전역으로 빼야하지 않나? 다른 곳에서 안 쓰이던가? 
+	//Mat flow_field = *pFlowField;
+	//Mat grad_mg = *pGradMg;
 
 	Sobel(src, grad_x, CV_32FC1, 1, 0, 5);
 	Sobel(src, grad_y, CV_32FC1, 0, 1, 5);
-	magnitude(grad_x, grad_y, grad_mg);
-	normalize(grad_mg, grad_mg, 0.0, 1.0, NORM_MINMAX);
+	magnitude(grad_x, grad_y, *pGradMg);
+	normalize(*pGradMg, *pGradMg, 0.0, 1.0, NORM_MINMAX);
 
-	printf("src.rows: %d     ", src.rows);
-	printf("src.cols: %d\n", src.cols);
 	for (int r = 0; r < src.rows; r++) {
 		for (int c = 0; c < src.cols; c++) {
 			float u = grad_x.at<float>(r, c);
 			float v = grad_y.at<float>(r, c);
 
-			flow_field.at<Vec2f>(r, c) = normalize(Vec2f(v, u));
+			(*pFlowField).at<Vec2f>(r, c) = normalize(Vec2f(v, u));
 		}
 	}
 
-	rotate_field(flow_field, 90.0);
+	rotate_field(src, pFlowField, 90.0);
 	printf("End init ETF \n");
 }
 
-Mat refine_ETF(Mat* pImg, int ksize, Mat flow_field, Mat grad_mg) {
+Mat refine_ETF(const Mat src, const int ksize, Mat flow_field, Mat grad_mg) {
 
 	printf("Start refine ETF \n");
-	Mat src = *pImg;
 	Mat refined_field = Mat::zeros(src.size(), CV_32FC2);
 	int width = src.cols;
 	int height = src.rows;
@@ -133,9 +130,8 @@ Mat refine_ETF(Mat* pImg, int ksize, Mat flow_field, Mat grad_mg) {
 int main(void) {
 	Mat original_image = imread("D:\\lab\\ETF\\Image\\lenna.jpg");
 	Mat image;
-	//Mat norm_image;
 	cvtColor(original_image, image, COLOR_BGR2GRAY);
-	//normalize(norm_image, image, 0.0, 1.0, NORM_MINMAX, CV_32FC1);
+	//normalize(image, image, 0.0, 1.0, NORM_MINMAX, CV_32FC1);
 
 	int width = image.cols;
 	int height = image.rows;
@@ -144,18 +140,17 @@ int main(void) {
 	Mat refined_field = Mat::zeros(image.size(), CV_32FC2);
 	Mat refined_field2 = Mat::zeros(image.size(), CV_32FC2);
 	Mat grad_mg = Mat::zeros(image.size(), CV_32FC1);
-	Mat temp = Mat::zeros(image.size(), CV_32FC3);
+	Mat temp = Mat::zeros(image.size(), CV_32FC2);		// TODO: CV_32FC2? CV_32FC3?
 
 	Mat* pFlowField = &flow_field;
-	Mat* pImg = &image;
+	Mat* pGradMg = &grad_mg;
 
 	const int ksize = 5;
 
 	printf("Main - Call init ETF \n");
-	init_ETF(pImg, pFlowField, grad_mg);
+	init_ETF(image, pFlowField, pGradMg);
 	printf("Main - Call refine ETF \n");
-	refined_field = refine_ETF(pImg, ksize, flow_field, grad_mg);
-
+	refined_field = refine_ETF(image, ksize, flow_field, grad_mg);
 
 	// LIC
 	printf("Main - Call LIC \n");
@@ -164,27 +159,21 @@ int main(void) {
 	printf("Main - Usage LIC - for문 \n");
 	for (int j = 0; j < height; j++) {
 		for (int i = 0; i < width; i++) {
-			lic.pVectr[(height - j - 1) * width * 2 + i * 2] = temp.at<Vec3f>(j, i)[0];
-			lic.pVectr[(height - j - 1) * width * 2 + i * 2 + 1] = -temp.at<Vec3f>(j, i)[1];
+			lic.pVectr[(height - j - 1) * width * 2 + i * 2] = temp.at<Vec2f>(j, i)[1];
+			lic.pVectr[(height - j - 1) * width * 2 + i * 2 + 1] = -temp.at<Vec2f>(j, i)[0];
 		}
 	}
 
 	printf("Main - Usage LIC - FlowImaging \n");
 	lic.FlowImagingLIC();
 
-	//IplImage* pFlowImage = lic.GetLICimage();
-	//USES_CONVERSION;
-	//cvShowImage(W2A(str.GetString()), pFlowImage);
-
-	printf("Main - Usage LIC - Convert to Mat \n");
-	Mat* pFlowImage = lic.GetLICimage();
-	USES_CONVERSION;
-
-	namedWindow("ETF with dwLIC", WINDOW_AUTOSIZE);
-	Mat matImg = cv::cvarrToMat(pFlowImage);
-	Mat* pOutputImg = &matImg;
-	imshow(" ", *pOutputImg);
-	waitKey();
+	IplImage* pFlowImage = lic.GetLICimage();
+	if (pFlowImage != NULL) {
+		USES_CONVERSION;
+		cvShowImage(" ", pFlowImage);
+		waitKey();
+		cvReleaseImage(&pFlowImage);
+	}
 
 	return 0;
 }
