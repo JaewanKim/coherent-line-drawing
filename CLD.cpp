@@ -1,6 +1,8 @@
 ﻿// CLD.cpp : 이 파일에는 'main' 함수가 포함됩니다. 거기서 프로그램 실행이 시작되고 종료됩니다.
 //
+
 #define USES_CONVERSION
+#define _USE_MATH_DEFINES
 
 #include "CLD.h"
 #include <opencv2/opencv.hpp>
@@ -14,33 +16,27 @@
 using namespace cv;
 using namespace std;
 
-void rotate_field(Mat src, Mat* pFlowField, float theta) {
+void rotate_field(Mat& flowField, float degree) {
 	printf("Start rotate field \n");
+	const float theta = degree / 180.0 * M_PI;
 
-	//Mat flow_field = pFlowField;
-	//Mat rotated = Mat::zeros(height, width, CV_32FC2);
-
-	for (int i = 0; i < src.rows; i++) {
-		for (int j = 0; j < src.rows; j++) {
-			Vec2f v = src.at<Vec2f>(i, j);
+	for (int i = 0; i < flowField.rows; i++) {
+		for (int j = 0; j < flowField.cols; j++) {
+			Vec2f v = flowField.at<Vec2f>(i, j);
 			float rx = v[0] * cos(theta) - v[1] * sin(theta);
 			float ry = v[1] * cos(theta) + v[0] * sin(theta);
 
-			(*pFlowField).at<Vec2f>(i, j) = Vec2f(rx, ry);
+			flowField.at<Vec2f>(i, j) = Vec2f(rx, ry);
 		}
 	}
-	// return rotated;
 	printf("End rotate field \n");
 }
 
-float weight_spatial(int h, int w, int r, int c, float radius) { 	// Eq(2)
-
-	if (sqrt(pow(h - c, 2) + pow(w - r, 2)) < radius) {
+float weight_spatial(const int h, const int w, const int r, const int c, const float radius) { 	// Eq(2)
+	if (sqrt(pow(h - c, 2) + pow(w - r, 2)) < radius)
 		return 1;
-	}
-	else {
+	else
 		return 0;
-	}
 }
 
 float weight_magnitude(const float gradmg_x, const float gradmg_y, const float n) {	// Eq(3)
@@ -52,41 +48,40 @@ float weight_direction(Vec2f& x, Vec2f& y) { 				// Eq(4)
 }
 
 float get_phi(Vec2f& x, Vec2f& y) {							// Eq(5)
-	if (x.dot(y) > 0) {
-		return 1;
-	}
-	else {
-		return -1;
-	}
+	if (x.dot(y) > 0) return 1;
+	else return -1;
 }
 
-void init_ETF(const Mat src, Mat* pFlowField, Mat* pGradMg) {
+void init_ETF(const Mat& src, Mat& flow_field, Mat& grad_mg) {
 
 	printf("Start init ETF \n");
 
-	Mat grad_x, grad_y;				// TODO: 이거 전역으로 빼야하지 않나? 다른 곳에서 안 쓰이던가? 
-	//Mat flow_field = *pFlowField;
-	//Mat grad_mg = *pGradMg;
+	Mat grad_x, grad_y;
 
 	Sobel(src, grad_x, CV_32FC1, 1, 0, 5);
 	Sobel(src, grad_y, CV_32FC1, 0, 1, 5);
-	magnitude(grad_x, grad_y, *pGradMg);
-	normalize(*pGradMg, *pGradMg, 0.0, 1.0, NORM_MINMAX);
+	magnitude(grad_x, grad_y, grad_mg);
+	normalize(grad_mg, grad_mg, 0.0, 1.0, NORM_MINMAX);
 
 	for (int r = 0; r < src.rows; r++) {
 		for (int c = 0; c < src.cols; c++) {
 			float u = grad_x.at<float>(r, c);
 			float v = grad_y.at<float>(r, c);
 
-			(*pFlowField).at<Vec2f>(r, c) = normalize(Vec2f(v, u));
+			if ((u == 0.f) && (v == 0.f)) {
+				grad_mg.at<Vec2f>(r, c) = 0.00001f;
+				flow_field.at<Vec2f>(r, c) = Vec2f(1.f, 0.f);
+			}
+			else
+				flow_field.at<Vec2f>(r, c) = normalize(Vec2f(u, v));
 		}
 	}
 
-	rotate_field(src, pFlowField, 90.0);
+	rotate_field(flow_field, 90.f);
 	printf("End init ETF \n");
 }
 
-Mat refine_ETF(const Mat src, const int ksize, Mat flow_field, Mat grad_mg) {
+Mat refine_ETF(const Mat& src, const int ksize, Mat& flow_field, const Mat& grad_mg) {
 
 	printf("Start refine ETF \n");
 	Mat refined_field = Mat::zeros(src.size(), CV_32FC2);
@@ -98,7 +93,7 @@ Mat refine_ETF(const Mat src, const int ksize, Mat flow_field, Mat grad_mg) {
 		for (int w = 0; w < width; w++) {
 
 			Vec2f t_cur_x = flow_field.at<Vec2f>(h, w);
-			Vec2f t_new = Vec2f(0, 0);
+			Vec2f t_new = Vec2f(0.f, 0.f);
 			float k = 0.0;
 
 			for (int r = h - ksize; r < h + ksize; r++) {
@@ -109,20 +104,29 @@ Mat refine_ETF(const Mat src, const int ksize, Mat flow_field, Mat grad_mg) {
 					Vec2f t_cur_y = flow_field.at<Vec2f>(r, c);
 
 					float phi = get_phi(t_cur_x, t_cur_y);
+					if (phi == 0.f)
+						continue;
 					float w_s = weight_spatial(h, w, c, r, ksize);
-					float w_m = weight_magnitude(grad_mg.at<float>(h, w), norm(grad_mg.at<float>(r, c)), 1);
+					if (w_s == 0.f)
+						continue;
+					float w_m = weight_magnitude(grad_mg.at<float>(h, w), grad_mg.at<float>(r, c), 1.f);
+					if (w_m == 0.f)
+						continue;
 					float w_d = weight_direction(t_cur_x, t_cur_y);
+					if (w_d == 0.f)
+						continue;
 
-					t_new += phi * t_cur_y * w_s * w_m * w_d;
-					k += phi * w_s * w_m * w_d;
+					t_new += (phi * t_cur_y * w_s * w_m * w_d);
+					k += (phi * w_s * w_m * w_d);
 				}
 			}
+
 			// normalize t_new
-			t_new /= k;
-			refined_field.at<Vec2f>(h, w) = t_new;
+			if (k != 0.f)
+				t_new /= k;
+			refined_field.at<Vec2f>(h, w) = normalize(t_new);
 		}
 	}
-
 	printf("End refine ETF \n");
 	return refined_field;
 }
@@ -131,26 +135,52 @@ int main(void) {
 	Mat original_image = imread("D:\\lab\\ETF\\Image\\lenna.jpg");
 	Mat image;
 	cvtColor(original_image, image, COLOR_BGR2GRAY);
-	//normalize(image, image, 0.0, 1.0, NORM_MINMAX, CV_32FC1);
 
 	int width = image.cols;
 	int height = image.rows;
 
 	Mat flow_field = Mat::zeros(image.size(), CV_32FC2);
 	Mat refined_field = Mat::zeros(image.size(), CV_32FC2);
-	Mat refined_field2 = Mat::zeros(image.size(), CV_32FC2);
 	Mat grad_mg = Mat::zeros(image.size(), CV_32FC1);
-	Mat temp = Mat::zeros(image.size(), CV_32FC2);		// TODO: CV_32FC2? CV_32FC3?
-
-	Mat* pFlowField = &flow_field;
-	Mat* pGradMg = &grad_mg;
 
 	const int ksize = 5;
 
 	printf("Main - Call init ETF \n");
-	init_ETF(image, pFlowField, pGradMg);
+	init_ETF(image, flow_field, grad_mg);
 	printf("Main - Call refine ETF \n");
 	refined_field = refine_ETF(image, ksize, flow_field, grad_mg);
+	for (int i = 0; i < 3; i++) {
+		refined_field = refine_ETF(image, ksize, refined_field, grad_mg);
+	}
+
+	/*
+	// 파일 입력
+
+	float* pMemory;
+	pMemory = new float[width * height * 2];
+
+
+	FILE* in;
+	float ch;
+	std::vector<float> v;
+
+	if ((in = fopen("D:\\lab\\ETF\\SampleFiles\\lennajpg.etf", "rb")) == NULL) {
+		fputs("fopen err", stderr);
+		exit(1);
+	}
+
+	fread(pMemory, sizeof(float), width * height * 2, in);
+
+	int idx = 0;
+	for (int j = 0; j < height; j++) {		// Mat temp로 차곡차곡 옮김
+		for (int i = 0; i < width; i++) {
+			temp.at<Vec2f>(j, i)[0] = pMemory[idx++];
+			temp.at<Vec2f>(j, i)[1] = pMemory[idx++];
+		}
+	}
+
+	fclose(in);
+	*/
 
 	// LIC
 	printf("Main - Call LIC \n");
@@ -159,8 +189,8 @@ int main(void) {
 	printf("Main - Usage LIC - for문 \n");
 	for (int j = 0; j < height; j++) {
 		for (int i = 0; i < width; i++) {
-			lic.pVectr[(height - j - 1) * width * 2 + i * 2] = temp.at<Vec2f>(j, i)[1];
-			lic.pVectr[(height - j - 1) * width * 2 + i * 2 + 1] = -temp.at<Vec2f>(j, i)[0];
+			lic.pVectr[(height - j - 1) * width * 2 + i * 2] = refined_field.at<Vec2f>(j, i)[0];
+			lic.pVectr[(height - j - 1) * width * 2 + i * 2 + 1] = -refined_field.at<Vec2f>(j, i)[1];
 		}
 	}
 

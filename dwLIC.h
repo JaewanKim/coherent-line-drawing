@@ -1,6 +1,7 @@
-
 #pragma once
 #include <opencv2\core\core_c.h>
+
+//struct IplImage;
 
 class dwLIC
 {

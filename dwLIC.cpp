@@ -1,4 +1,4 @@
-
+//#include "StdAfx.h"
 #include "dwLIC.h"
 #include <stdlib.h>
 #include <cmath>
@@ -35,7 +35,7 @@ void dwLIC::MakeWhiteNoise()
 
 void dwLIC::NoiseFromImage(IplImage* img)
 {
-	pNoise = new unsigned char[n_xres * n_yres];
+	pNoise = new unsigned char[n_xres * n_yres * img->nChannels];
 	for (int j = 0; j < n_yres; j++)
 	{
 		for (int i = 0; i < n_xres; i++)
@@ -91,12 +91,12 @@ void dwLIC::FlowImagingLIC()
 
 	pOutputImg = cvCreateImage(cvSize(n_xres, n_yres), 8, 1);
 
-	pVectr = new float[n_xres * n_yres * 2];
+	//pVectr = new float[n_xres * n_yres * 2];
 
 	int		vec_id;						///ID in the VECtor buffer (for the input flow field)
 	int		advDir;						///ADVection DIRection (0: positive;  1: negative)
 	int		advcts;						///number of ADVeCTion stepS per direction (a step counter)
-	int		ADVCTS = int(krnlen * 3);	///MAXIMUM number of advection steps per direction to break dead loops
+	int		ADVCTS = int(krnlen * 3);	///MAXIMUM number of advection steps per direction to break dead loops	
 
 	float	vctr_x;						///x-component  of the VeCToR at the forefront point
 	float	vctr_y;						///y-component  of the VeCToR at the forefront point
@@ -109,7 +109,7 @@ void dwLIC::FlowImagingLIC()
 	float	tmpLen;						///TeMPorary LENgth of a trial clipped-segment
 	float	segLen;						///SEGment   LENgth
 	float	curLen;						///CURrent   LENgth of the streamline
-	float	prvLen;						///PReVious  LENgth of the streamline
+	float	prvLen;						///PReVious  LENgth of the streamline		
 	float	W_ACUM;						///ACcuMulated Weight from the seed to the current streamline forefront
 	float	texVal;						///TEXture VALue
 	float	smpWgt;						///WeiGhT of the current SaMPle
@@ -213,7 +213,7 @@ void dwLIC::FlowImagingLIC()
 					clp0_y = clp1_y;
 
 					///check if the streamline has gone beyond the flow field///
-					if (clp0_x < 0.0f || clp0_x >= n_xres || clp0_y < 0.0f || clp0_y >= n_yres)  break;
+					if (clp0_x < 0.0f || clp0_x >= (n_xres - 1) || clp0_y < 0.0f || clp0_y >= (n_yres - 1))  break;
 				}
 			}
 
@@ -227,3 +227,27 @@ void dwLIC::FlowImagingLIC()
 		}
 	}
 }
+
+/*
+///		write the LIC image to a PPM file     ///
+void	WriteImage2PPM(int  n_xres,  int  n_yres,  unsigned char*  pImage,  char*  f_name)
+{
+	FILE*	o_file;
+	if(   ( o_file = fopen(f_name, "w") )  ==  NULL   )
+	{
+		printf("Can't open output file\n");
+		return;
+	}
+
+	fprintf(o_file, "P6\n%d %d\n255\n", n_xres, n_yres);
+
+	for(int  j = 0;  j < n_yres;  j ++)
+		for(int  i = 0;  i < n_xres;  i ++)
+		{
+			unsigned  char	unchar = pImage[j * n_xres + i];
+			fprintf(o_file, "%c%c%c", unchar, unchar, unchar);
+		}
+
+		fclose (o_file);	o_file = NULL;
+}
+*/
