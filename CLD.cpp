@@ -1,6 +1,5 @@
 ﻿// CLD.cpp : 이 파일에는 'main' 함수가 포함됩니다. 거기서 프로그램 실행이 시작되고 종료됩니다.
 //
-
 #define USES_CONVERSION
 #define _USE_MATH_DEFINES
 
@@ -11,12 +10,12 @@
 #include <cmath>
 #include <opencv2\core\core_c.h>
 #include <vector>
-#include "D:\lab\ETF\dwLIC\dwLIC.h"
+#include "D:\lab\ETF\dwLIC\dwColoredLIC.h"
 
 using namespace cv;
 using namespace std;
 
-void rotate_field(Mat& flowField, float degree) {
+void rotate_field(Mat& flowField, const float degree) {
 	printf("Start rotate field \n");
 	const float theta = degree / 180.0 * M_PI;
 
@@ -43,11 +42,11 @@ float weight_magnitude(const float gradmg_x, const float gradmg_y, const float n
 	return 0.5 * (1 + tanh(n * (gradmg_y - gradmg_x)));
 }
 
-float weight_direction(Vec2f& x, Vec2f& y) { 				// Eq(4)
+float weight_direction(const Vec2f& x, const Vec2f& y) { 				// Eq(4)
 	return abs(x.dot(y));
 }
 
-float get_phi(Vec2f& x, Vec2f& y) {							// Eq(5)
+float get_phi(const Vec2f& x, const Vec2f& y) {							// Eq(5)
 	if (x.dot(y) > 0) return 1;
 	else return -1;
 }
@@ -61,7 +60,6 @@ void init_ETF(const Mat& src, Mat& flow_field, Mat& grad_mg) {
 	Sobel(src, grad_x, CV_32FC1, 1, 0, 5);
 	Sobel(src, grad_y, CV_32FC1, 0, 1, 5);
 	magnitude(grad_x, grad_y, grad_mg);
-	normalize(grad_mg, grad_mg, 0.0, 1.0, NORM_MINMAX);
 
 	for (int r = 0; r < src.rows; r++) {
 		for (int c = 0; c < src.cols; c++) {
@@ -132,7 +130,8 @@ Mat refine_ETF(const Mat& src, const int ksize, Mat& flow_field, const Mat& grad
 }
 
 int main(void) {
-	Mat original_image = imread("D:\\lab\\ETF\\Image\\lenna.jpg");
+	const char* path = "D:\\lab\\ETF\\Image\\lenna.jpg";
+	Mat original_image = imread(path);
 	Mat image;
 	cvtColor(original_image, image, COLOR_BGR2GRAY);
 
@@ -149,38 +148,9 @@ int main(void) {
 	init_ETF(image, flow_field, grad_mg);
 	printf("Main - Call refine ETF \n");
 	refined_field = refine_ETF(image, ksize, flow_field, grad_mg);
-	for (int i = 0; i < 3; i++) {
+	for (int i = 0; i < 5; i++) {
 		refined_field = refine_ETF(image, ksize, refined_field, grad_mg);
 	}
-
-	/*
-	// 파일 입력
-
-	float* pMemory;
-	pMemory = new float[width * height * 2];
-
-
-	FILE* in;
-	float ch;
-	std::vector<float> v;
-
-	if ((in = fopen("D:\\lab\\ETF\\SampleFiles\\lennajpg.etf", "rb")) == NULL) {
-		fputs("fopen err", stderr);
-		exit(1);
-	}
-
-	fread(pMemory, sizeof(float), width * height * 2, in);
-
-	int idx = 0;
-	for (int j = 0; j < height; j++) {		// Mat temp로 차곡차곡 옮김
-		for (int i = 0; i < width; i++) {
-			temp.at<Vec2f>(j, i)[0] = pMemory[idx++];
-			temp.at<Vec2f>(j, i)[1] = pMemory[idx++];
-		}
-	}
-
-	fclose(in);
-	*/
 
 	// LIC
 	printf("Main - Call LIC \n");
@@ -193,6 +163,9 @@ int main(void) {
 			lic.pVectr[(height - j - 1) * width * 2 + i * 2 + 1] = -refined_field.at<Vec2f>(j, i)[1];
 		}
 	}
+	printf("Main - Usage LIC - NoiseFromImage \n");
+	IplImage* pImg = cvLoadImage(path);
+	lic.NoiseFromImage(pImg);
 
 	printf("Main - Usage LIC - FlowImaging \n");
 	lic.FlowImagingLIC();
@@ -207,7 +180,6 @@ int main(void) {
 
 	return 0;
 }
-
 
 // 프로그램 실행: <Ctrl+F5> 또는 [디버그] > [디버깅하지 않고 시작] 메뉴
 // 프로그램 디버그: <F5> 키 또는 [디버그] > [디버깅 시작] 메뉴
