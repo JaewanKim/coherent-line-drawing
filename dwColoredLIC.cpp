@@ -1,11 +1,6 @@
 
 //#include "StdAfx.h"
-#include "dwLIC.h"
-#include <stdlib.h>
-#include <cmath>
 #include <opencv2/opencv.hpp>
-#include <opencv2\core\core_c.h>
-#include <opencv2\core\types_c.h>
 
 const float dwLIC::LOWPASS_FILTR_LENGTH = 10.0f;
 const float dwLIC::LINE_SQUARE_CLIP_MAX = 100000.0f;
