@@ -1,3 +1,4 @@
+
 #pragma once
 #include <opencv2\core\core_c.h>
 
@@ -11,10 +12,9 @@ class dwLIC
 	static const float LINE_SQUARE_CLIP_MAX;
 	static const float VECTOR_COMPONENT_MIN;
 
-
 	bool bNoiseImage;
 	int n_xres, n_yres;
-	unsigned char* pNoise;
+	unsigned char* pNoise, * pNoiseB, * pNoiseG, * pNoiseR;
 	int LUTsiz;
 	float* p_LUT0, * p_LUT1;
 	float krnlen;
