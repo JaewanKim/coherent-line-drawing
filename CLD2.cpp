@@ -11,11 +11,13 @@
 #include <opencv2\core\core_c.h>
 #include <vector>
 #include "D:\lab\ETF\dwLIC\dwLIC.h"
+#include "D:\lab\ETF\dwLIC\dwLIC2.h"
 
 using namespace cv;
 using namespace std;
 
 void rotate_field(Mat& flowField, const float degree) {
+	printf("Start rotate field \n");
 	const float theta = degree / 180.0 * M_PI;
 
 	for (int i = 0; i < flowField.rows; i++) {
@@ -27,6 +29,7 @@ void rotate_field(Mat& flowField, const float degree) {
 			flowField.at<Vec2f>(i, j) = Vec2f(rx, ry);
 		}
 	}
+	printf("End rotate field \n");
 }
 
 float weight_spatial(const int h, const int w, const int r, const int c, const float radius) { 	// Eq(2)
@@ -40,16 +43,19 @@ float weight_magnitude(const float gradmg_x, const float gradmg_y, const float n
 	return 0.5 * (1 + tanh(n * (gradmg_y - gradmg_x)));
 }
 
-float weight_direction(const Vec2f& x, const Vec2f& y) {	// Eq(4)
+float weight_direction(const Vec2f& x, const Vec2f& y) { 				// Eq(4)
 	return abs(x.dot(y));
 }
 
-float get_phi(const Vec2f& x, const Vec2f& y) {				// Eq(5)
+float get_phi(const Vec2f& x, const Vec2f& y) {							// Eq(5)
 	if (x.dot(y) > 0) return 1;
 	else return -1;
 }
 
 void init_ETF(const Mat& src, Mat& flow_field, Mat& grad_mg) {
+
+	printf("Start init ETF \n");
+
 	Mat grad_x, grad_y;
 
 	Sobel(src, grad_x, CV_32FC1, 1, 0, 5);
@@ -62,21 +68,26 @@ void init_ETF(const Mat& src, Mat& flow_field, Mat& grad_mg) {
 			float v = grad_y.at<float>(r, c);
 
 			if ((u == 0.f) && (v == 0.f)) {
-				grad_mg.at<float>(r, c) = 0.00001f;
+				grad_mg.at<Vec2f>(r, c) = 0.00001f;
 				flow_field.at<Vec2f>(r, c) = Vec2f(1.f, 0.f);
 			}
 			else
 				flow_field.at<Vec2f>(r, c) = normalize(Vec2f(u, v));
 		}
 	}
+
 	rotate_field(flow_field, 90.f);
+	printf("End init ETF \n");
 }
 
 Mat refine_ETF(const Mat& src, const int ksize, Mat& flow_field, const Mat& grad_mg) {
+
+	printf("Start refine ETF \n");
 	Mat refined_field = Mat::zeros(src.size(), CV_32FC2);
 	int width = src.cols;
 	int height = src.rows;
 
+	// Refine ETF
 	for (int h = 0; h < height; h++) {
 		for (int w = 0; w < width; w++) {
 
@@ -115,6 +126,7 @@ Mat refine_ETF(const Mat& src, const int ksize, Mat& flow_field, const Mat& grad
 			refined_field.at<Vec2f>(h, w) = normalize(t_new);
 		}
 	}
+	printf("End refine ETF \n");
 	return refined_field;
 }
 
@@ -133,42 +145,20 @@ int main(void) {
 
 	const int ksize = 5;
 
+	printf("Main - Call init ETF \n");
 	init_ETF(image, flow_field, grad_mg);
+	printf("Main - Call refine ETF \n");
 	refined_field = refine_ETF(image, ksize, flow_field, grad_mg);
-	for (int i = 0; i < 2; i++)
+	for (int i = 0; i < 2; i++) {
 		refined_field = refine_ETF(image, ksize, refined_field, grad_mg);
-
-	/*
-	// 파일 입력
-
-	float* pMemory;
-	pMemory = new float[width * height * 2];
-
-
-	FILE* in;
-	float ch;
-	std::vector<float> v;
-
-	if ((in = fopen("D:\\lab\\ETF\\SampleFiles\\lennajpg.etf", "rb")) == NULL) {
-		fputs("fopen err", stderr);
-		exit(1);
 	}
-
-	fread(pMemory, sizeof(float), width * height * 2, in);
-
-	int idx = 0;
-	for (int j = 0; j < height; j++) {		// Mat temp로 차곡차곡 옮김
-		for (int i = 0; i < width; i++) {
-			temp.at<Vec2f>(j, i)[0] = pMemory[idx++];
-			temp.at<Vec2f>(j, i)[1] = pMemory[idx++];
-		}
-	}
-
-	fclose(in);
-	*/
-
+	
+	// LIC
+	printf("Main - Call LIC \n");
 	dwLIC lic(width, height);
 
+	/*
+	printf("Main - Usage LIC - for문 \n");
 	for (int j = 0; j < height; j++) {
 		for (int i = 0; i < width; i++) {
 			lic.pVectr[(height - j - 1) * width * 2 + i * 2] = refined_field.at<Vec2f>(j, i)[0];
@@ -176,12 +166,47 @@ int main(void) {
 		}
 	}
 
-	IplImage* pImg = cvLoadImage(path);
-	lic.NoiseFromImage(pImg);
+	//printf("Main - Usage LIC - NoiseFromImage \n");
+	//IplImage* pImg = cvLoadImage(path);
+	//lic.NoiseFromImage(pImg);
 
+	printf("Main - Usage LIC - FlowImaging \n");
 	lic.FlowImagingLIC();
 
+	//m_pLICField
 	IplImage* pFlowImage = lic.GetLICimage();
+	if (pFlowImage != NULL) {
+		USES_CONVERSION;
+		cvShowImage(" ", pFlowImage);
+		waitKey();
+		cvReleaseImage(&pFlowImage);
+	}
+	*/
+
+	/* LIC2 */
+	printf("Main - Call LIC2 \n");
+	dwLIC2 lic2(width, height);
+	printf("Main - Call LIC2 init \n");
+	lic2.init();
+
+	printf("Main - Call LIC2 setFlowField & NoiseField \n");
+	for (int j = 0; j < height; j++) {
+		for (int i = 0; i < width; i++) {
+			lic2.setFlowField(i, j, refined_field.at<Vec2f>(j, i)[0], refined_field.at<Vec2f>(j, i)[1]);
+			lic2.setNoiseField(i, j, (unsigned char)rand() % 256);
+		}
+	}
+
+	printf("Main - Call LIC2 doLICForward \n");
+	lic2.doLICForward();
+
+	printf("Main - Show Image \n");
+	IplImage* pFlowImage = cvCreateImage(cvSize(width, height), 8, 1);
+	for (int j = 0; j < height; j++) {
+		for (int i = 0; i < width; i++) {
+			pFlowImage->imageData[j * width + i] = lic2.m_pLICField[j * width + i];
+		}
+	}
 	if (pFlowImage != NULL) {
 		USES_CONVERSION;
 		cvShowImage(" ", pFlowImage);

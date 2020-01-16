@@ -1,10 +1,6 @@
-//#include "StdAfx.h"
+
 #include "dwLIC.h"
-#include <stdlib.h>
-#include <cmath>
 #include <opencv2/opencv.hpp>
-#include <opencv2\core\core_c.h>
-#include <opencv2\core\types_c.h>
 
 const float dwLIC::LOWPASS_FILTR_LENGTH = 10.0f;
 const float dwLIC::LINE_SQUARE_CLIP_MAX = 100000.0f;
@@ -14,7 +10,12 @@ dwLIC::~dwLIC(void)
 {
 	if (pNoise)
 		delete[] pNoise;
-
+	if (pNoiseB)
+		delete[] pNoiseB;
+	if (pNoiseG)
+		delete[] pNoiseG;
+	if (pNoiseR)
+		delete[] pNoiseR;
 	if (pVectr)
 		delete[] pVectr;
 }
@@ -35,20 +36,21 @@ void dwLIC::MakeWhiteNoise()
 
 void dwLIC::NoiseFromImage(IplImage* img)
 {
-	pNoise = new unsigned char[n_xres * n_yres * img->nChannels];
+	pNoiseB = new unsigned char[n_xres * n_yres];
+	pNoiseG = new unsigned char[n_xres * n_yres];
+	pNoiseR = new unsigned char[n_xres * n_yres];
+
 	for (int j = 0; j < n_yres; j++)
 	{
 		for (int i = 0; i < n_xres; i++)
 		{
-			for (int k = 0; k < img->nChannels; k++)
-			{
-				pNoise[(n_yres - j - 1) * n_xres + i] = (unsigned char)img->imageData[j * img->widthStep + i * img->nChannels + k];
-			}
+			pNoiseB[(n_yres - j - 1) * n_xres + i] = (unsigned char)img->imageData[j * img->widthStep + i * img->nChannels + 0];
+			pNoiseG[(n_yres - j - 1) * n_xres + i] = (unsigned char)img->imageData[j * img->widthStep + i * img->nChannels + 1];
+			pNoiseR[(n_yres - j - 1) * n_xres + i] = (unsigned char)img->imageData[j * img->widthStep + i * img->nChannels + 2];
 		}
 	}
 	bNoiseImage = true;
 }
-
 
 ///		generate box filter LUTs     ///
 void dwLIC::GenBoxFiltrLUT()
@@ -78,20 +80,20 @@ void dwLIC::NormalizVectrs()
 	}
 }
 
-
 ///		flow imaging (visualization) through Line Integral Convolution     ///
 void dwLIC::FlowImagingLIC()
 {
 	NormalizVectrs();
-	if (!bNoiseImage)
+	if (!bNoiseImage) {
 		MakeWhiteNoise();
+		pOutputImg = cvCreateImage(cvSize(n_xres, n_yres), 8, 1);	// GRAY 1 channel
+	}
+	else
+		pOutputImg = cvCreateImage(cvSize(n_xres, n_yres), 8, 3);	// RGB 3 channel
+
 	LUTsiz = DISCRETE_FILTER_SIZE;
 	GenBoxFiltrLUT();
 	krnlen = LOWPASS_FILTR_LENGTH;
-
-	pOutputImg = cvCreateImage(cvSize(n_xres, n_yres), 8, 1);
-
-	//pVectr = new float[n_xres * n_yres * 2];
 
 	int		vec_id;						///ID in the VECtor buffer (for the input flow field)
 	int		advDir;						///ADVection DIRection (0: positive;  1: negative)
@@ -112,8 +114,14 @@ void dwLIC::FlowImagingLIC()
 	float	prvLen;						///PReVious  LENgth of the streamline		
 	float	W_ACUM;						///ACcuMulated Weight from the seed to the current streamline forefront
 	float	texVal;						///TEXture VALue
+	float	texValB;					///TEXture VALue
+	float	texValG;					///TEXture VALue
+	float	texValR;					///TEXture VALue
 	float	smpWgt;						///WeiGhT of the current SaMPle
 	float	t_acum[2];					///two ACcUMulated composite Textures for the two directions, perspectively
+	float	t_acumB[2];					///two ACcUMulated composite Textures for the two directions, perspectively
+	float	t_acumG[2];					///two ACcUMulated composite Textures for the two directions, perspectively
+	float	t_acumR[2];					///two ACcUMulated composite Textures for the two directions, perspectively
 	float	w_acum[2];					///two ACcUMulated Weighting values   for the two directions, perspectively
 	float* wgtLUT = NULL;				///WeiGhT Look Up Table pointing to the target filter LUT
 	float	len2ID = (DISCRETE_FILTER_SIZE - 1) / krnlen;	///map a curve LENgth TO an ID in the LUT
@@ -124,7 +132,7 @@ void dwLIC::FlowImagingLIC()
 		for (int i = 0; i < n_xres; i++)
 		{
 			///init the composite texture accumulators and the weight accumulators///
-			t_acum[0] = t_acum[1] = w_acum[0] = w_acum[1] = 0.0f;
+			t_acum[0] = t_acum[1] = t_acumB[0] = t_acumB[1] = t_acumG[0] = t_acumG[1] = t_acumR[0] = t_acumR[1] = w_acum[0] = w_acum[1] = 0.0f;
 
 			///for either advection direction///
 			for (advDir = 0; advDir < 2; advDir++)
@@ -161,7 +169,15 @@ void dwLIC::FlowImagingLIC()
 					///in case of a critical point///
 					if (vctr_x == 0.0f && vctr_y == 0.0f)
 					{
-						t_acum[advDir] = (advcts == 0) ? 0.0f : t_acum[advDir];		   ///this line is indeed unnecessary
+
+						if (!bNoiseImage) {
+							t_acum[advDir] = (advcts == 0) ? 0.0f : t_acum[advDir];		   ///this line is indeed unnecessary
+						}
+						else {
+							t_acumB[advDir] = (advcts == 0) ? 0.0f : t_acumB[advDir];		   ///this line is indeed unnecessary
+							t_acumG[advDir] = (advcts == 0) ? 0.0f : t_acumG[advDir];		   ///this line is indeed unnecessary
+							t_acumR[advDir] = (advcts == 0) ? 0.0f : t_acumR[advDir];		   ///this line is indeed unnecessary
+						}
 						w_acum[advDir] = (advcts == 0) ? 1.0f : w_acum[advDir];
 						break;
 					}
@@ -199,13 +215,28 @@ void dwLIC::FlowImagingLIC()
 					samp_y = (clp0_y + clp1_y) * 0.5f;
 
 					///obtain the texture value of the sample///
-					texVal = pNoise[int(samp_y) * n_xres + int(samp_x)];
+					if (!bNoiseImage) {
+						texVal = pNoise[int(samp_y) * n_xres + int(samp_x)];
+					}
+					else {
+						texValB = pNoiseB[int(samp_y) * n_xres + int(samp_x)];
+						texValG = pNoiseG[int(samp_y) * n_xres + int(samp_x)];
+						texValR = pNoiseR[int(samp_y) * n_xres + int(samp_x)];
+					}
 
 					///update the accumulated weight and the accumulated composite texture (texture x weight)///
 					W_ACUM = wgtLUT[int(curLen * len2ID)];
 					smpWgt = W_ACUM - w_acum[advDir];
 					w_acum[advDir] = W_ACUM;
-					t_acum[advDir] += texVal * smpWgt;
+
+					if (!bNoiseImage) {
+						t_acum[advDir] += texVal * smpWgt;
+					}
+					else {
+						t_acumB[advDir] += texValB * smpWgt;
+						t_acumG[advDir] += texValG * smpWgt;
+						t_acumR[advDir] += texValR * smpWgt;
+					}
 
 					///update the step counter and the "current" clip point///
 					advcts++;
@@ -217,13 +248,32 @@ void dwLIC::FlowImagingLIC()
 				}
 			}
 
-			///normalize the accumulated composite texture///
-			texVal = (t_acum[0] + t_acum[1]) / (w_acum[0] + w_acum[1]);
 
+			///normalize the accumulated composite texture///
 			///clamp the texture value against the displayable intensity range [0, 255]
-			texVal = (texVal < 0.0f) ? 0.0f : texVal;
-			texVal = (texVal > 255.0f) ? 255.0f : texVal;
-			pOutputImg->imageData[(pOutputImg->height - j - 1) * pOutputImg->widthStep + i] = (unsigned char)texVal;
+			///clamp the texture value against the displayable intensity range [0, 255]
+			if (!bNoiseImage) {
+				texVal = (t_acum[0] + t_acum[1]) / (w_acum[0] + w_acum[1]);
+				texVal = (texVal < 0.0f) ? 0.0f : texVal;
+				texVal = (texVal > 255.0f) ? 255.0f : texVal;
+				pOutputImg->imageData[(pOutputImg->height - j - 1) * pOutputImg->widthStep + i] = (unsigned char)texVal;
+			}
+			else {
+				texValB = (t_acumB[0] + t_acumB[1]) / (w_acum[0] + w_acum[1]);
+				texValG = (t_acumG[0] + t_acumG[1]) / (w_acum[0] + w_acum[1]);
+				texValR = (t_acumR[0] + t_acumR[1]) / (w_acum[0] + w_acum[1]);
+				texValB = (texValB < 0.0f) ? 0.0f : texValB;
+				texValG = (texValG < 0.0f) ? 0.0f : texValG;
+				texValR = (texValR < 0.0f) ? 0.0f : texValR;
+				texValB = (texValB > 255.0f) ? 255.0f : texValB;
+				texValG = (texValG > 255.0f) ? 255.0f : texValG;
+				texValR = (texValR > 255.0f) ? 255.0f : texValR;
+				pOutputImg->imageData[(pOutputImg->height - j - 1) * pOutputImg->widthStep + i * pOutputImg->nChannels + 0] = (unsigned char)texValB;
+				pOutputImg->imageData[(pOutputImg->height - j - 1) * pOutputImg->widthStep + i * pOutputImg->nChannels + 1] = (unsigned char)texValG;
+				pOutputImg->imageData[(pOutputImg->height - j - 1) * pOutputImg->widthStep + i * pOutputImg->nChannels + 2] = (unsigned char)texValR;
+			}
+
+
 		}
 	}
 }
@@ -238,16 +288,13 @@ void	WriteImage2PPM(int  n_xres,  int  n_yres,  unsigned char*  pImage,  char*  
 		printf("Can't open output file\n");
 		return;
 	}
-
 	fprintf(o_file, "P6\n%d %d\n255\n", n_xres, n_yres);
-
 	for(int  j = 0;  j < n_yres;  j ++)
 		for(int  i = 0;  i < n_xres;  i ++)
 		{
 			unsigned  char	unchar = pImage[j * n_xres + i];
 			fprintf(o_file, "%c%c%c", unchar, unchar, unchar);
 		}
-
 		fclose (o_file);	o_file = NULL;
 }
 */
