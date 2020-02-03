@@ -48,7 +48,7 @@ void dwLIC2::setBlackNoiseField(int x, int y, int threshold) {
 		return;
 	}
 	int index = m_nWidth * y + x;
-	m_pNoiseField[index] = (range(rnd) > threshold) ? (unsigned char)64 : (unsigned char)192;
+	m_pNoiseField[index] = (range(rnd) > threshold) ? (unsigned char)0 : (unsigned char)255;
 
 	m_noiseList.push_back(dwNoise(x, y));
 }
