@@ -126,7 +126,7 @@ int main(void) {
 	Mat refined_field = Mat::zeros(image.size(), CV_32FC2);
 	Mat grad_mg = Mat::zeros(image.size(), CV_32FC1);
 
-	const int ksize = 32;
+	const int ksize = 5;
 
 	printf("refine ETF 1\n");
 	init_ETF(image, flow_field, grad_mg);
@@ -156,6 +156,7 @@ int main(void) {
 			lic2.getJitteredSeedPoint(i, j, seedSpace);
 		}
 	}
+
 	//lic2.drawSeedStraight(seedLength);
 	lic2.drawSeedCurve(seedLength, 10.f);
 
@@ -173,6 +174,5 @@ int main(void) {
 		cvReleaseImage(&pFlowImage);
 	}
 	
-
 	return 0;
 }
