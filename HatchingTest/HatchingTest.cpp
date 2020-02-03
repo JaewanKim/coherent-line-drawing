@@ -144,7 +144,6 @@ int main(void) {
 	//}
 	
 	// Hatching Test with SeedPoint
-	
 	IplImage* pImg = cvLoadImage(path);
 	dwLIC2 lic2(width, height);
 
