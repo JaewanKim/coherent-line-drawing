@@ -339,11 +339,6 @@ int main(void) {
 		refined_field = refine_ETF(image, ksize, refined_field, grad_mg);
 	}
 
-	//for (int j = 0; j < height; j++)
-	//	for (int i = 0; i < width; i++)
-	//		refined_field.at<Vec2f>(j, i) = Vec2f(0.7071f, 0.7071f);
-	//
-
 	// Painting Test with a lot of Jittered Seed Point & Paper Test (+ - paperThreshold)
 	const int length = 30;
 	const float lic_sigma = 1.0f;
