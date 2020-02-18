@@ -1,1 +1,1 @@
-# coherent-line-drawing
+# SNUT CG Lab
